@@ -57,7 +57,7 @@ Expo App (React Native)  ──HTTP──▶  Node.js 后端  ──subprocess�
 - `src/components/ControlButtons.tsx` — 重播/上一个/暂停/下一个/变速
 
 ### Phase 4：音频管线
-- `src/services/api.ts` — 后端 API URL 配置（当前为占位符 `https://api.fitword.example.com`）
+- `src/services/api.ts` — 后端 API URL 配置（当前为 `http://localhost:3000`，部署时改一行即可）
 - `src/services/ttsService.ts` — TTS 缓存逻辑：检查本地 → 下载 → 缓存到 FileSystem.cacheDirectory
 - `src/services/audioPlayer.ts` — expo-av Audio.Sound 封装，支持 play/stop/pause/resume/setRate
 - `src/hooks/useLearnSession.ts` — 6 步播放状态机：
@@ -69,14 +69,37 @@ Expo App (React Native)  ──HTTP──▶  Node.js 后端  ──subprocess�
 - App 和 Server 的 TypeScript 编译均通过 ✅
 - 代码已 push 到 GitHub `expo-migration` 分支
 
-## 接下来的步骤
+## 当前进度 & 下次继续
 
-按顺序执行：
+**已完成（2026-07-26）：**
+- ✅ Edge TTS 方案验证通过（Python edge-tts 在本地可正常合成语音）
+- ✅ 后端本地运行测试通过（`curl http://localhost:3000/api/tts?text=hello&voice=en-US-JennyNeural` → 200 + MP3 音频）
+- ✅ Expo Metro + Web 模式都能启动
+- ✅ App/Server TypeScript 编译通过
 
-1. **确保 Python + edge-tts 已安装** → `pip install edge-tts`（服务器上也要装）
-2. **配置 App URL** → 编辑 `src/services/api.ts`，把 `API_BASE` 从占位符改成真实服务器地址
-3. **部署后端** → `npm start` 跑在 3000 端口（可以部署到任何国内能访问 Bing Speech API 的服务器）
-4. **测试 App** → `npx expo start`，选词书 → 进入学习页，验证语音播放正常
+**下一步（首次真机测试）：**
+
+推荐先走方案 A 快速验证，不需要买服务器：
+
+```
+方案 A：内网穿透（免费，今天能跑）
+  1. 装 cpolar → https://www.cpolar.com/ 下载安装
+  2. 终端跑：cpolar http 3000
+  3. 拿到公网 URL（如 https://xxx.cpolar.cn）
+  4. 改 src/services/api.ts 的 API_BASE 为这个 URL
+  5. 开两个终端：
+     终端 1: cd server && npx tsx src/index.ts
+     终端 2: npx expo start
+  6. 手机装 Expo Go，扫码测试
+
+方案 B：买服务器（稳定，长期用）
+  1. 阿里云轻量应用服务器 香港（~¥34/月）
+     - 国内访问快 + 免备案 + 能连 Bing Speech API
+     - 1核1G内存够用
+  2. 服务器上装 Node.js 22+、Python 3 + pip install edge-tts
+  3. git clone + npm install + npm run build && npm start
+  4. 改 api.ts 的 API_BASE 为服务器 IP
+```
 
 ## 踩过的坑，绝对不要踩
 
