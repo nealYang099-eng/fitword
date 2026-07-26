@@ -4,26 +4,32 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 
 ---
 
-# FitWord 项目交接文档（2026-07-25）
+# FitWord 项目交接文档（2026-07-26）
 
 ## 我们在做什么
 
-把 FitWord（英语单词学习 App）从旧版 Vite+React web 迁移到 **Expo v57 + Azure TTS 云端语音**。
+把 FitWord（英语单词学习 App）从旧版 Vite+React web 迁移到 **Expo v57 + Edge TTS 云端语音**。
 
 **核心目标：**
-- 所有设备（iOS/Android）听到**完全一样的语音**（Azure 神经 TTS，不依赖设备本地引擎）
-- 国内可访问（后端部署香港，不走 Vercel）
+- 所有设备（iOS/Android）听到**完全一样的语音**（Edge 神经 TTS，不依赖设备本地引擎）
+- 无需注册云服务（Edge TTS 免费无限量，无需 API Key）
 - 离线可用（词书数据打包 App，TTS 音频本地缓存）
 
 ## 架构
 
 ```
-Expo App (React Native)  ──HTTP──▶  Node.js 后端  ──SDK──▶  Azure TTS
-     │                               (Express)               (East Asia)
-     ├─ 词书 JSON 本地打包
+Expo App (React Native)  ──HTTP──▶  Node.js 后端  ──subprocess──▶  edge-tts (Python)
+     │                               (Express)                │
+     ├─ 词书 JSON 本地打包                                    └─ Bing Speech API (WebSocket)
      ├─ expo-av 播放 MP3
      └─ expo-file-system 缓存音频
 ```
+
+**为什么用 Edge TTS 而不是 Azure TTS：**
+- Azure Portal 国内访问 404，无法创建 Speech 资源
+- Edge TTS 与 Azure TTS 使用**同一套神经语音模型**（Jenny, Xiaoxiao 等）
+- 完全免费、无需注册、无限量
+- 通过 Python `edge-tts` CLI 调用（Node.js 原生 WebSocket 在墙内可能被拦）
 
 ## 已经完成的
 
@@ -34,11 +40,11 @@ Expo App (React Native)  ──HTTP──▶  Node.js 后端  ──SDK──▶
 - `src/data/wordLoader.ts` — 懒加载器，用静态 require map 解决 Metro 不支持 `import(variable)` 的问题
 
 ### Phase 2：后端（代码完成，未部署）
-- `server/` — Express + Azure TTS SDK
-- `server/src/services/azureTts.ts` — synthesize(text, voiceName) → Buffer
+- `server/` — Express + edge-tts (Python CLI)
+- `server/src/services/edgeTts.ts` — synthesize(text, voiceName) → Buffer，通过 `spawn('edge-tts', ...)` 调用 Python CLI
 - `server/src/routes/tts.ts` — GET /api/tts?text=...&voice=... 返回 audio/mpeg
 - `server/src/index.ts` — Express 入口，含限流、CORS
-- `server/.env.example` — 需要填入 AZURE_SPEECH_KEY 和 AZURE_SPEECH_REGION
+- `server/.env.example` — 仅需 PORT（默认 3000），无需任何 API Key
 - 后端 TypeScript 编译通过 ✅
 
 ### Phase 3：App 界面
@@ -59,29 +65,17 @@ Expo App (React Native)  ──HTTP──▶  Node.js 后端  ──SDK──▶
 
 ### 其他
 - 旧版项目 `C:\Users\neal\Projects\fitword-app` 已删除
+- 桌面 `FitWord.bat` 已删除
 - App 和 Server 的 TypeScript 编译均通过 ✅
 - 代码已 push 到 GitHub `expo-migration` 分支
-
-## 当前卡在：Step ① — 创建 Azure Speech 资源
-
-需要去 Azure Portal 创建一个 Speech 资源，拿到 key 和 region。
-
-**具体操作：**
-1. 打开 https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices
-2. 订阅：任意（免费试用可）
-3. 资源组：新建 `fitword`
-4. 区域：**East Asia**（离国内最近）
-5. 名称：`fitword-tts`
-6. 定价层：**Free F0**（每月 50 万字符免费）
-7. 创建完成后 → 密钥和终结点 → 复制密钥 1
 
 ## 接下来的步骤
 
 按顺序执行：
 
-1. **创建 Azure Speech 资源**（卡在这里）→ 拿到 key + region
-2. **部署后端** → 把 key 填入 `server/.env`，部署到阿里云 ECS 香港（或任何国内能访问的服务器），`npm start` 跑在 3000 端口
-3. **配置 App URL** → 编辑 `src/services/api.ts`，把 `API_BASE` 从占位符改成真实服务器地址
+1. **确保 Python + edge-tts 已安装** → `pip install edge-tts`（服务器上也要装）
+2. **配置 App URL** → 编辑 `src/services/api.ts`，把 `API_BASE` 从占位符改成真实服务器地址
+3. **部署后端** → `npm start` 跑在 3000 端口（可以部署到任何国内能访问 Bing Speech API 的服务器）
 4. **测试 App** → `npx expo start`，选词书 → 进入学习页，验证语音播放正常
 
 ## 踩过的坑，绝对不要踩
@@ -96,9 +90,10 @@ Expo App (React Native)  ──HTTP──▶  Node.js 后端  ──SDK──▶
 - ✅ 用 `Record<string, () => Word[]>` + 字符串字面量 `require()`，每个路径写死
 - 见 `src/data/wordLoader.ts` 的写法
 
-### 坑 3：Azure TTS SDK 枚举大小写
-- ❌ `Audio16khz32KBitRateMonoMp3`（小写 k）
-- ✅ `Audio16Khz32KBitRateMonoMp3`（大写 K）
+### 坑 3：Node.js WebSocket 直连 Edge TTS 在墙内 403
+- ❌ 用 `ws` 库直连 `wss://speech.platform.bing.com/...` — 返回 403
+- ✅ 用 Python `edge-tts` CLI（`pip install edge-tts`），Node.js 通过 `spawn` 调用
+- edge-tts 库处理了 WebSocket 握手的所有细节（headers、token 等），比自己写可靠
 
 ### 坑 4：tsconfig 要排除 server 目录
 - App 的 `tsconfig.json` 必须加 `"exclude": ["server"]`
@@ -107,7 +102,7 @@ Expo App (React Native)  ──HTTP──▶  Node.js 后端  ──SDK──▶
 ### 坑 5：旧方案都不管用
 - expo-speech = 设备本地 TTS，iOS/Android/不同厂商音色完全不同，**不能用**
 - Web Speech API = 只有浏览器有，Expo App 里没有
-- Vercel 部署 = 国内被墙，用户访问不了
+- Azure Portal = 国内访问 404，无法注册
 - 不要试图回到这些方案
 
 ## 项目关键文件速查
@@ -118,9 +113,9 @@ Expo App (React Native)  ──HTTP──▶  Node.js 后端  ──SDK──▶
 | `src/services/ttsService.ts` | TTS 缓存和下载 |
 | `src/services/api.ts` | 后端 URL 配置（当前占位符） |
 | `src/data/wordLoader.ts` | 词书加载（静态 require map） |
-| `server/src/services/azureTts.ts` | Azure TTS SDK 封装 |
+| `server/src/services/edgeTts.ts` | Edge TTS 封装（spawn edge-tts CLI） |
 | `server/src/routes/tts.ts` | TTS API 路由 |
-| `server/.env.example` | Azure 密钥模板 |
+| `server/.env.example` | 仅需 PORT |
 
 ## 已安装的关键依赖
 
@@ -130,4 +125,8 @@ Expo App (React Native)  ──HTTP──▶  Node.js 后端  ──SDK──▶
 - @react-navigation/native@^7.3.14, @react-navigation/native-stack@^7.18.6
 
 **Server:**
-- express@^4.21.0, microsoft-cognitiveservices-speech-sdk@^1.38.0
+- express@^4.21.0
+- 无需 Node.js TTS 依赖 — 通过 `spawn('edge-tts', ...)` 调用 Python CLI
+
+**Server 运行环境要求：**
+- Python 3.x + `pip install edge-tts`

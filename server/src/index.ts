@@ -20,7 +20,4 @@ app.use('/api/tts', ttsRouter)
 
 app.listen(config.port, () => {
   console.log(`FitWord server running on port ${config.port}`)
-  if (!config.azure.key) {
-    console.warn('[warn] AZURE_SPEECH_KEY not set — TTS endpoint will fail')
-  }
 })

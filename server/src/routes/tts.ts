@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express'
-import { synthesize } from '../services/azureTts.js'
+import { synthesize } from '../services/edgeTts.js'
 
 const router = Router()
 
